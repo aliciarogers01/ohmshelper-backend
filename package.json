@@ -1,0 +1,17 @@
+{
+  "name": "ohms-band-backend",
+  "version": "1.0.0",
+  "description": "Simple Railway backend for OHMS band data",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
