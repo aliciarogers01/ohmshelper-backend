@@ -51,6 +51,11 @@ async function setupDatabase() {
     ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT DEFAULT '';
   `);
 
+  await pool.query(`
+    ALTER TABLE bands
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+  `);
+
   console.log("Database is ready.");
 }
 
@@ -196,6 +201,97 @@ app.post("/bands", async (req, res) => {
   } catch (error) {
     console.error("Error adding band:", error);
     res.status(500).json({ error: "Failed to add band" });
+  }
+});
+
+/*
+  One-time CSV import route.
+
+  Expected JSON from PowerShell:
+
+  {
+    "bands": [
+      {
+        "band_name": "666 Pack",
+        "city": "CLE",
+        "state": ""
+      }
+    ]
+  }
+
+  This route does NOT require image_url.
+  Photos will be added later through /bands/:id/image.
+*/
+app.post("/bands/import", async (req, res) => {
+  const bands = req.body.bands;
+
+  if (!Array.isArray(bands)) {
+    return res.status(400).json({
+      error: "Expected body format: { bands: [...] }"
+    });
+  }
+
+  const cleanedBands = bands
+    .map((band) => ({
+      band_name: String(
+        band.band_name ||
+        band.band_Name ||
+        band.bandName ||
+        band.name ||
+        ""
+      ).trim(),
+      city: String(band.city || "").trim(),
+      state: String(band.state || "").trim()
+    }))
+    .filter((band) => band.band_name.length > 0);
+
+  if (cleanedBands.length === 0) {
+    return res.status(400).json({
+      error: "No valid bands found in import."
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    let insertedCount = 0;
+
+    for (const band of cleanedBands) {
+      await client.query(
+        `
+        INSERT INTO bands
+          (band_name, city, state)
+        VALUES
+          ($1, $2, $3);
+        `,
+        [
+          band.band_name,
+          band.city || "",
+          band.state || ""
+        ]
+      );
+
+      insertedCount++;
+    }
+
+    await client.query("COMMIT");
+
+    res.json({
+      message: "Bands imported successfully.",
+      insertedCount
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    console.error("Band import error:", error);
+
+    res.status(500).json({
+      error: "Band import failed."
+    });
+  } finally {
+    client.release();
   }
 });
 
