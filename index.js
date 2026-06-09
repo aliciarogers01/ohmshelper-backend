@@ -546,6 +546,117 @@ app.get("/artists", async (req, res) => {
   }
 });
 
+app.post("/artists", async (req, res) => {
+  try {
+    const { artistName, city, state } = req.body;
+
+    if (!artistName || artistName.trim() === "") {
+      return res.status(400).json({ error: "Artist name is required" });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO artists (artist_name, city, state)
+      VALUES ($1, $2, $3)
+      RETURNING
+        id,
+        artist_name AS "artistName",
+        city,
+        state,
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [
+        artistName.trim(),
+        city || "",
+        state || ""
+      ]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Error adding artist:", error);
+    res.status(500).json({ error: "Failed to add artist" });
+  }
+});
+
+app.put("/artists/:id", async (req, res) => {
+  try {
+    const { artistName, city, state } = req.body;
+
+    const result = await pool.query(
+      `
+      UPDATE artists
+      SET
+        artist_name = COALESCE($1, artist_name),
+        city = COALESCE($2, city),
+        state = COALESCE($3, state),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
+      RETURNING
+        id,
+        artist_name AS "artistName",
+        city,
+        state,
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [
+        artistName ?? null,
+        city ?? null,
+        state ?? null,
+        req.params.id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Artist not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating artist:", error);
+    res.status(500).json({ error: "Failed to update artist" });
+  }
+});
+
+app.delete("/artists/:id", async (req, res) => {
+  try {
+    const existing = await pool.query(
+      "SELECT cloudinary_public_id FROM artists WHERE id = $1;",
+      [req.params.id]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: "Artist not found" });
+    }
+
+    const publicId = existing.rows[0].cloudinary_public_id;
+
+    if (publicId) {
+      try {
+        await cloudinary.uploader.destroy(publicId);
+      } catch (cloudinaryError) {
+        console.warn("Could not delete Cloudinary artist image:", cloudinaryError);
+      }
+    }
+
+    await pool.query("DELETE FROM artists WHERE id = $1;", [req.params.id]);
+
+    res.json({
+      success: true,
+      deletedId: Number(req.params.id)
+    });
+  } catch (error) {
+    console.error("Error deleting artist:", error);
+    res.status(500).json({ error: "Failed to delete artist" });
+  }
+});
+
 app.get("/bands/:id/artists", async (req, res) => {
   try {
     const result = await pool.query(
@@ -626,7 +737,11 @@ app.post("/bands/:id/artists", async (req, res) => {
           created_at AS "createdAt",
           updated_at AS "updatedAt";
         `,
-        [artistName.trim(), city || "", state || ""]
+        [
+          artistName.trim(),
+          city || "",
+          state || ""
+        ]
       );
 
       artist = artistResult.rows[0];
@@ -639,7 +754,11 @@ app.post("/bands/:id/artists", async (req, res) => {
       ON CONFLICT (band_id, artist_id)
       DO UPDATE SET role = EXCLUDED.role;
       `,
-      [req.params.id, artist.id, role || ""]
+      [
+        req.params.id,
+        artist.id,
+        role || ""
+      ]
     );
 
     res.status(201).json({
@@ -690,7 +809,11 @@ app.post("/artists/:id/image", upload.single("image"), async (req, res) => {
         created_at AS "createdAt",
         updated_at AS "updatedAt";
       `,
-      [cloudinaryResult.secure_url, cloudinaryResult.public_id, req.params.id]
+      [
+        cloudinaryResult.secure_url,
+        cloudinaryResult.public_id,
+        req.params.id
+      ]
     );
 
     res.json(result.rows[0]);
