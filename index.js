@@ -1047,26 +1047,6 @@ app.get("/bands/:id/albums", async (req, res) => {
   }
 });
 
-Thought for a few seconds
-
-That error means the browser sent this request:
-
-POST /bands/:id/albums
-
-and Railway answered:
-
-Route not found
-
-So one of these happened:
-
-1. The new app.post("/bands/:id/albums") route was not committed to GitHub
-2. Railway has not redeployed yet
-3. The route was pasted AFTER the app.use 404 route
-
-The fix is most likely #3.
-
-In index.js, this must be the very last route:
-
 app.use((req, res) => {
   res.status(404).json({ error: "Route not found" });
 });
