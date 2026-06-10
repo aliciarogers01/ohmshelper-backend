@@ -32,7 +32,51 @@ const pool = new Pool({
 });
 
 async function setupDatabase() {
-    await pool.query(`
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bands (
+      id SERIAL PRIMARY KEY,
+      band_name TEXT NOT NULL,
+      city TEXT DEFAULT '',
+      state TEXT DEFAULT '',
+      radio_show TEXT DEFAULT '',
+      image_url TEXT DEFAULT '',
+      cloudinary_public_id TEXT DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE bands
+    ADD COLUMN IF NOT EXISTS city TEXT DEFAULT '';
+  `);
+
+  await pool.query(`
+    ALTER TABLE bands
+    ADD COLUMN IF NOT EXISTS state TEXT DEFAULT '';
+  `);
+
+  await pool.query(`
+    ALTER TABLE bands
+    ADD COLUMN IF NOT EXISTS radio_show TEXT DEFAULT '';
+  `);
+
+  await pool.query(`
+    ALTER TABLE bands
+    ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';
+  `);
+
+  await pool.query(`
+    ALTER TABLE bands
+    ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT DEFAULT '';
+  `);
+
+  await pool.query(`
+    ALTER TABLE bands
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS artists (
       id SERIAL PRIMARY KEY,
       artist_name TEXT NOT NULL,
@@ -75,6 +119,7 @@ async function setupDatabase() {
     ALTER TABLE artists
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
   `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS albums (
       id SERIAL PRIMARY KEY,
@@ -187,10 +232,12 @@ app.get("/health", async (req, res) => {
   }
 });
 
+// ===== BANDS =====
+
 app.get("/bands", async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT 
+      SELECT
         id,
         band_name AS "bandName",
         city,
@@ -215,7 +262,7 @@ app.get("/bands/:id", async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT 
+      SELECT
         id,
         band_name AS "bandName",
         city,
@@ -254,7 +301,7 @@ app.post("/bands", async (req, res) => {
       `
       INSERT INTO bands (band_name, city, state, radio_show, image_url)
       VALUES ($1, $2, $3, $4, $5)
-      RETURNING 
+      RETURNING
         id,
         band_name AS "bandName",
         city,
@@ -265,13 +312,7 @@ app.post("/bands", async (req, res) => {
         created_at AS "createdAt",
         updated_at AS "updatedAt";
       `,
-      [
-        bandName.trim(),
-        city || "",
-        state || "",
-        radioShow || "",
-        imageUrl || ""
-      ]
+      [bandName.trim(), city || "", state || "", radioShow || "", imageUrl || ""]
     );
 
     res.status(201).json(result.rows[0]);
@@ -281,24 +322,6 @@ app.post("/bands", async (req, res) => {
   }
 });
 
-/*
-  One-time CSV import route.
-
-  Expected JSON from PowerShell:
-
-  {
-    "bands": [
-      {
-        "band_name": "666 Pack",
-        "city": "CLE",
-        "state": ""
-      }
-    ]
-  }
-
-  This route does NOT require image_url.
-  Photos will be added later through /bands/:id/image.
-*/
 app.post("/bands/import", async (req, res) => {
   const bands = req.body.bands;
 
@@ -338,16 +361,10 @@ app.post("/bands/import", async (req, res) => {
     for (const band of cleanedBands) {
       await client.query(
         `
-        INSERT INTO bands
-          (band_name, city, state)
-        VALUES
-          ($1, $2, $3);
+        INSERT INTO bands (band_name, city, state)
+        VALUES ($1, $2, $3);
         `,
-        [
-          band.band_name,
-          band.city || "",
-          band.state || ""
-        ]
+        [band.band_name, band.city || "", band.state || ""]
       );
 
       insertedCount++;
@@ -379,7 +396,7 @@ app.put("/bands/:id", async (req, res) => {
     const result = await pool.query(
       `
       UPDATE bands
-      SET 
+      SET
         band_name = COALESCE($1, band_name),
         city = COALESCE($2, city),
         state = COALESCE($3, state),
@@ -387,7 +404,7 @@ app.put("/bands/:id", async (req, res) => {
         image_url = COALESCE($5, image_url),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $6
-      RETURNING 
+      RETURNING
         id,
         band_name AS "bandName",
         city,
@@ -425,26 +442,23 @@ app.post("/bands/:id/image", upload.single("image"), async (req, res) => {
       return res.status(400).json({ error: "No image file uploaded" });
     }
 
-    const bandCheck = await pool.query(
-      "SELECT id FROM bands WHERE id = $1;",
-      [req.params.id]
-    );
+    const bandCheck = await pool.query("SELECT id FROM bands WHERE id = $1;", [req.params.id]);
 
     if (bandCheck.rows.length === 0) {
       return res.status(404).json({ error: "Band not found" });
     }
 
-    const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer);
+    const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer, "ohms-helper/bands");
 
     const result = await pool.query(
       `
       UPDATE bands
-      SET 
+      SET
         image_url = $1,
         cloudinary_public_id = $2,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $3
-      RETURNING 
+      RETURNING
         id,
         band_name AS "bandName",
         city,
@@ -455,11 +469,7 @@ app.post("/bands/:id/image", upload.single("image"), async (req, res) => {
         created_at AS "createdAt",
         updated_at AS "updatedAt";
       `,
-      [
-        cloudinaryResult.secure_url,
-        cloudinaryResult.public_id,
-        req.params.id
-      ]
+      [cloudinaryResult.secure_url, cloudinaryResult.public_id, req.params.id]
     );
 
     res.json(result.rows[0]);
@@ -486,7 +496,7 @@ app.delete("/bands/:id", async (req, res) => {
       try {
         await cloudinary.uploader.destroy(publicId);
       } catch (cloudinaryError) {
-        console.warn("Could not delete Cloudinary image:", cloudinaryError);
+        console.warn("Could not delete Cloudinary band image:", cloudinaryError);
       }
     }
 
@@ -551,12 +561,7 @@ app.post("/artists", async (req, res) => {
         created_at AS "createdAt",
         updated_at AS "updatedAt";
       `,
-      [
-        artistName.trim(),
-        role || "",
-        city || "",
-        state || ""
-      ]
+      [artistName.trim(), role || "", city || "", state || ""]
     );
 
     res.status(201).json(result.rows[0]);
@@ -591,13 +596,7 @@ app.put("/artists/:id", async (req, res) => {
         created_at AS "createdAt",
         updated_at AS "updatedAt";
       `,
-      [
-        artistName ?? null,
-        role ?? null,
-        city ?? null,
-        state ?? null,
-        req.params.id
-      ]
+      [artistName ?? null, role ?? null, city ?? null, state ?? null, req.params.id]
     );
 
     if (result.rows.length === 0) {
@@ -608,6 +607,49 @@ app.put("/artists/:id", async (req, res) => {
   } catch (error) {
     console.error("Error updating artist:", error);
     res.status(500).json({ error: "Failed to update artist" });
+  }
+});
+
+app.post("/artists/:id/image", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No image file uploaded" });
+    }
+
+    const artistCheck = await pool.query("SELECT id FROM artists WHERE id = $1;", [req.params.id]);
+
+    if (artistCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Artist not found" });
+    }
+
+    const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer, "ohms-helper/artists");
+
+    const result = await pool.query(
+      `
+      UPDATE artists
+      SET
+        image_url = $1,
+        cloudinary_public_id = $2,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING
+        id,
+        artist_name AS "artistName",
+        role,
+        city,
+        state,
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [cloudinaryResult.secure_url, cloudinaryResult.public_id, req.params.id]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error uploading artist image:", error);
+    res.status(500).json({ error: "Failed to upload artist image" });
   }
 });
 
@@ -651,6 +693,7 @@ app.get("/bands/:id/artists", async (req, res) => {
       SELECT
         artists.id,
         artists.artist_name AS "artistName",
+        artists.role AS "defaultRole",
         artists.city,
         artists.state,
         artists.image_url AS "imageUrl",
@@ -680,10 +723,7 @@ app.post("/bands/:id/artists", async (req, res) => {
       return res.status(400).json({ error: "Artist name is required" });
     }
 
-    const bandCheck = await pool.query(
-      "SELECT id FROM bands WHERE id = $1;",
-      [req.params.id]
-    );
+    const bandCheck = await pool.query("SELECT id FROM bands WHERE id = $1;", [req.params.id]);
 
     if (bandCheck.rows.length === 0) {
       return res.status(404).json({ error: "Band not found" });
@@ -694,6 +734,7 @@ app.post("/bands/:id/artists", async (req, res) => {
       SELECT
         id,
         artist_name AS "artistName",
+        role,
         city,
         state,
         image_url AS "imageUrl",
@@ -712,11 +753,12 @@ app.post("/bands/:id/artists", async (req, res) => {
     if (!artist) {
       const artistResult = await pool.query(
         `
-        INSERT INTO artists (artist_name, city, state)
-        VALUES ($1, $2, $3)
+        INSERT INTO artists (artist_name, role, city, state)
+        VALUES ($1, $2, $3, $4)
         RETURNING
           id,
           artist_name AS "artistName",
+          role,
           city,
           state,
           image_url AS "imageUrl",
@@ -724,11 +766,7 @@ app.post("/bands/:id/artists", async (req, res) => {
           created_at AS "createdAt",
           updated_at AS "updatedAt";
         `,
-        [
-          artistName.trim(),
-          city || "",
-          state || ""
-        ]
+        [artistName.trim(), role || "", city || "", state || ""]
       );
 
       artist = artistResult.rows[0];
@@ -741,72 +779,16 @@ app.post("/bands/:id/artists", async (req, res) => {
       ON CONFLICT (band_id, artist_id)
       DO UPDATE SET role = EXCLUDED.role;
       `,
-      [
-        req.params.id,
-        artist.id,
-        role || ""
-      ]
+      [req.params.id, artist.id, role || ""]
     );
 
     res.status(201).json({
       ...artist,
-      role: role || ""
+      role: role || artist.role || ""
     });
   } catch (error) {
     console.error("Error adding band artist:", error);
     res.status(500).json({ error: "Failed to add band artist" });
-  }
-});
-
-app.post("/artists/:id/image", upload.single("image"), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No image file uploaded" });
-    }
-
-    const artistCheck = await pool.query(
-      "SELECT id FROM artists WHERE id = $1;",
-      [req.params.id]
-    );
-
-    if (artistCheck.rows.length === 0) {
-      return res.status(404).json({ error: "Artist not found" });
-    }
-
-    const cloudinaryResult = await uploadBufferToCloudinary(
-      req.file.buffer,
-      "ohms-helper/artists"
-    );
-
-    const result = await pool.query(
-      `
-      UPDATE artists
-      SET
-        image_url = $1,
-        cloudinary_public_id = $2,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
-      RETURNING
-        id,
-        artist_name AS "artistName",
-        city,
-        state,
-        image_url AS "imageUrl",
-        cloudinary_public_id AS "cloudinaryPublicId",
-        created_at AS "createdAt",
-        updated_at AS "updatedAt";
-      `,
-      [
-        cloudinaryResult.secure_url,
-        cloudinaryResult.public_id,
-        req.params.id
-      ]
-    );
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error("Error uploading artist image:", error);
-    res.status(500).json({ error: "Failed to upload artist image" });
   }
 });
 
@@ -834,6 +816,147 @@ app.get("/albums", async (req, res) => {
   } catch (error) {
     console.error("Error getting albums:", error);
     res.status(500).json({ error: "Failed to get albums" });
+  }
+});
+
+app.post("/albums", async (req, res) => {
+  try {
+    const { albumTitle, releaseYear } = req.body;
+
+    if (!albumTitle || albumTitle.trim() === "") {
+      return res.status(400).json({ error: "Album title is required" });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO albums (album_title, release_year)
+      VALUES ($1, $2)
+      RETURNING
+        id,
+        album_title AS "albumTitle",
+        release_year AS "releaseYear",
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [albumTitle.trim(), releaseYear || ""]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Error adding album:", error);
+    res.status(500).json({ error: "Failed to add album" });
+  }
+});
+
+app.put("/albums/:id", async (req, res) => {
+  try {
+    const { albumTitle, releaseYear } = req.body;
+
+    const result = await pool.query(
+      `
+      UPDATE albums
+      SET
+        album_title = COALESCE($1, album_title),
+        release_year = COALESCE($2, release_year),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING
+        id,
+        album_title AS "albumTitle",
+        release_year AS "releaseYear",
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [albumTitle ?? null, releaseYear ?? null, req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Album not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating album:", error);
+    res.status(500).json({ error: "Failed to update album" });
+  }
+});
+
+app.post("/albums/:id/image", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No image file uploaded" });
+    }
+
+    const albumCheck = await pool.query("SELECT id FROM albums WHERE id = $1;", [req.params.id]);
+
+    if (albumCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Album not found" });
+    }
+
+    const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer, "ohms-helper/albums");
+
+    const result = await pool.query(
+      `
+      UPDATE albums
+      SET
+        image_url = $1,
+        cloudinary_public_id = $2,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING
+        id,
+        album_title AS "albumTitle",
+        release_year AS "releaseYear",
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [cloudinaryResult.secure_url, cloudinaryResult.public_id, req.params.id]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error uploading album image:", error);
+    res.status(500).json({ error: "Failed to upload album image" });
+  }
+});
+
+app.delete("/albums/:id", async (req, res) => {
+  try {
+    const existing = await pool.query(
+      "SELECT cloudinary_public_id FROM albums WHERE id = $1;",
+      [req.params.id]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: "Album not found" });
+    }
+
+    const publicId = existing.rows[0].cloudinary_public_id;
+
+    if (publicId) {
+      try {
+        await cloudinary.uploader.destroy(publicId);
+      } catch (cloudinaryError) {
+        console.warn("Could not delete Cloudinary album image:", cloudinaryError);
+      }
+    }
+
+    await pool.query("DELETE FROM band_albums WHERE album_id = $1;", [req.params.id]);
+    await pool.query("DELETE FROM albums WHERE id = $1;", [req.params.id]);
+
+    res.json({
+      success: true,
+      deletedId: Number(req.params.id)
+    });
+  } catch (error) {
+    console.error("Error deleting album:", error);
+    res.status(500).json({ error: "Failed to delete album" });
   }
 });
 
@@ -921,17 +1044,17 @@ app.post("/bands/:id/albums", async (req, res) => {
       );
 
       album = albumResult.rows[0];
-
-      await pool.query(
-        `
-        INSERT INTO band_albums (band_id, album_id)
-        VALUES ($1, $2)
-        ON CONFLICT (band_id, album_id)
-        DO NOTHING;
-        `,
-        [req.params.id, album.id]
-      );
     }
+
+    await pool.query(
+      `
+      INSERT INTO band_albums (band_id, album_id)
+      VALUES ($1, $2)
+      ON CONFLICT (band_id, album_id)
+      DO NOTHING;
+      `,
+      [req.params.id, album.id]
+    );
 
     res.status(201).json({
       ...album,
@@ -940,53 +1063,6 @@ app.post("/bands/:id/albums", async (req, res) => {
   } catch (error) {
     console.error("Error adding band album:", error);
     res.status(500).json({ error: "Failed to add band album" });
-  }
-});
-
-app.post("/albums/:id/image", upload.single("image"), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No image file uploaded" });
-    }
-
-    const albumCheck = await pool.query(
-      "SELECT id FROM albums WHERE id = $1;",
-      [req.params.id]
-    );
-
-    if (albumCheck.rows.length === 0) {
-      return res.status(404).json({ error: "Album not found" });
-    }
-
-    const cloudinaryResult = await uploadBufferToCloudinary(
-      req.file.buffer,
-      "ohms-helper/albums"
-    );
-
-    const result = await pool.query(
-      `
-      UPDATE albums
-      SET
-        image_url = $1,
-        cloudinary_public_id = $2,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
-      RETURNING
-        id,
-        album_title AS "albumTitle",
-        release_year AS "releaseYear",
-        image_url AS "imageUrl",
-        cloudinary_public_id AS "cloudinaryPublicId",
-        created_at AS "createdAt",
-        updated_at AS "updatedAt";
-      `,
-      [cloudinaryResult.secure_url, cloudinaryResult.public_id, req.params.id]
-    );
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error("Error uploading album image:", error);
-    res.status(500).json({ error: "Failed to upload album image" });
   }
 });
 
