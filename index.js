@@ -46,35 +46,12 @@ async function setupDatabase() {
     );
   `);
 
-  await pool.query(`
-    ALTER TABLE bands
-    ADD COLUMN IF NOT EXISTS city TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE bands
-    ADD COLUMN IF NOT EXISTS state TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE bands
-    ADD COLUMN IF NOT EXISTS radio_show TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE bands
-    ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE bands
-    ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE bands
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-  `);
+  await pool.query(`ALTER TABLE bands ADD COLUMN IF NOT EXISTS city TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE bands ADD COLUMN IF NOT EXISTS state TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE bands ADD COLUMN IF NOT EXISTS radio_show TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE bands ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE bands ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE bands ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS artists (
@@ -90,35 +67,12 @@ async function setupDatabase() {
     );
   `);
 
-  await pool.query(`
-    ALTER TABLE artists
-    ADD COLUMN IF NOT EXISTS role TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE artists
-    ADD COLUMN IF NOT EXISTS city TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE artists
-    ADD COLUMN IF NOT EXISTS state TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE artists
-    ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE artists
-    ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE artists
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-  `);
+  await pool.query(`ALTER TABLE artists ADD COLUMN IF NOT EXISTS role TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE artists ADD COLUMN IF NOT EXISTS city TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE artists ADD COLUMN IF NOT EXISTS state TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE artists ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE artists ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE artists ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS albums (
@@ -133,30 +87,11 @@ async function setupDatabase() {
     );
   `);
 
-  await pool.query(`
-    ALTER TABLE albums
-    ADD COLUMN IF NOT EXISTS band_name TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE albums
-    ADD COLUMN IF NOT EXISTS release_year TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE albums
-    ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE albums
-    ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE albums
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-  `);
+  await pool.query(`ALTER TABLE albums ADD COLUMN IF NOT EXISTS band_name TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE albums ADD COLUMN IF NOT EXISTS release_year TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE albums ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE albums ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE albums ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS band_artists (
@@ -169,10 +104,7 @@ async function setupDatabase() {
     );
   `);
 
-  await pool.query(`
-    ALTER TABLE band_artists
-    ADD COLUMN IF NOT EXISTS role TEXT DEFAULT '';
-  `);
+  await pool.query(`ALTER TABLE band_artists ADD COLUMN IF NOT EXISTS role TEXT DEFAULT '';`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS band_albums (
@@ -341,10 +273,10 @@ app.post("/bands/import", async (req, res) => {
     .map((band) => ({
       band_name: String(
         band.band_name ||
-        band.band_Name ||
-        band.bandName ||
-        band.name ||
-        ""
+          band.band_Name ||
+          band.bandName ||
+          band.name ||
+          ""
       ).trim(),
       city: String(band.city || "").trim(),
       state: String(band.state || "").trim()
@@ -763,7 +695,7 @@ app.post("/bands/:id/artists", async (req, res) => {
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM artists
-      WHERE LOWER(artist_name) = LOWER($1)
+      WHERE LOWER(TRIM(artist_name)) = LOWER(TRIM($1))
       LIMIT 1;
       `,
       [artistName.trim()]
@@ -800,7 +732,7 @@ app.post("/bands/:id/artists", async (req, res) => {
       ON CONFLICT (band_id, artist_id)
       DO UPDATE SET role = EXCLUDED.role;
       `,
-      [req.params.id, artist.id, role || ""]
+      [req.params.id, artist.id, role || artist.role || ""]
     );
 
     res.status(201).json({
@@ -821,15 +753,23 @@ app.get("/albums", async (req, res) => {
       SELECT
         albums.id,
         albums.album_title AS "albumTitle",
-        COALESCE(bands.band_name, albums.band_name, '') AS "bandName",
+        COALESCE(
+          (
+            SELECT bands.band_name
+            FROM band_albums
+            JOIN bands ON band_albums.band_id = bands.id
+            WHERE band_albums.album_id = albums.id
+            LIMIT 1
+          ),
+          albums.band_name,
+          ''
+        ) AS "bandName",
         albums.release_year AS "releaseYear",
         albums.image_url AS "imageUrl",
         albums.cloudinary_public_id AS "cloudinaryPublicId",
         albums.created_at AS "createdAt",
         albums.updated_at AS "updatedAt"
       FROM albums
-      LEFT JOIN band_albums ON albums.id = band_albums.album_id
-      LEFT JOIN bands ON band_albums.band_id = bands.id
       ORDER BY LOWER(albums.album_title) ASC;
     `);
 
@@ -1019,70 +959,6 @@ app.get("/bands/:id/albums", async (req, res) => {
   }
 });
 
-app.get("/bands/:id/albums", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `
-      SELECT
-        albums.id,
-        albums.album_title AS "albumTitle",
-        COALESCE(bands.band_name, albums.band_name, '') AS "bandName",
-        albums.release_year AS "releaseYear",
-        albums.image_url AS "imageUrl",
-        albums.cloudinary_public_id AS "cloudinaryPublicId",
-        band_albums.created_at AS "linkedAt"
-      FROM band_albums
-      JOIN albums ON band_albums.album_id = albums.id
-      JOIN bands ON band_albums.band_id = bands.id
-      WHERE band_albums.band_id = $1
-      ORDER BY LOWER(albums.album_title) ASC;
-      `,
-      [req.params.id]
-    );
-
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Error getting band albums:", error);
-    res.status(500).json({ error: "Failed to get band albums" });
-  }
-});
-
-app.use((req, res) => {
-  res.status(404).json({ error: "Route not found" });
-});
-
-Your album linking route must be above that.
-
-The bottom of index.js must look like this exact order:
-
-app.get("/bands/:id/albums", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `
-      SELECT
-        albums.id,
-        albums.album_title AS "albumTitle",
-        COALESCE(bands.band_name, albums.band_name, '') AS "bandName",
-        albums.release_year AS "releaseYear",
-        albums.image_url AS "imageUrl",
-        albums.cloudinary_public_id AS "cloudinaryPublicId",
-        band_albums.created_at AS "linkedAt"
-      FROM band_albums
-      JOIN albums ON band_albums.album_id = albums.id
-      JOIN bands ON band_albums.band_id = bands.id
-      WHERE band_albums.band_id = $1
-      ORDER BY LOWER(albums.album_title) ASC;
-      `,
-      [req.params.id]
-    );
-
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Error getting band albums:", error);
-    res.status(500).json({ error: "Failed to get band albums" });
-  }
-});
-
 app.post("/bands/:id/albums", async (req, res) => {
   try {
     const { albumTitle, bandName, releaseYear } = req.body;
@@ -1102,7 +978,7 @@ app.post("/bands/:id/albums", async (req, res) => {
 
     const selectedBandName = bandCheck.rows[0].band_name || bandName || "";
 
-    const existingGlobalAlbum = await pool.query(
+    const existingAlbum = await pool.query(
       `
       SELECT
         id,
@@ -1114,14 +990,14 @@ app.post("/bands/:id/albums", async (req, res) => {
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM albums
-      WHERE LOWER(album_title) = LOWER($1)
-        AND LOWER(COALESCE(band_name, '')) = LOWER($2)
+      WHERE LOWER(TRIM(album_title)) = LOWER(TRIM($1))
+        AND LOWER(TRIM(COALESCE(band_name, ''))) = LOWER(TRIM($2))
       LIMIT 1;
       `,
       [albumTitle.trim(), selectedBandName]
     );
 
-    let album = existingGlobalAlbum.rows[0];
+    let album = existingAlbum.rows[0];
 
     if (!album) {
       const albumResult = await pool.query(
@@ -1163,7 +1039,6 @@ app.post("/bands/:id/albums", async (req, res) => {
     res.status(500).json({ error: "Failed to add band album" });
   }
 });
-
 
 app.use((req, res) => {
   res.status(404).json({ error: "Route not found" });
