@@ -67,6 +67,10 @@ async function setupDatabase() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    await pool.query(`
+    ALTER TABLE artists
+    ADD COLUMN IF NOT EXISTS role TEXT DEFAULT '';
   `);
 
   await pool.query(`
@@ -529,6 +533,7 @@ app.get("/artists", async (req, res) => {
       SELECT
         id,
         artist_name AS "artistName",
+        role,
         city,
         state,
         image_url AS "imageUrl",
@@ -548,7 +553,7 @@ app.get("/artists", async (req, res) => {
 
 app.post("/artists", async (req, res) => {
   try {
-    const { artistName, city, state } = req.body;
+    const { artistName, role, city, state } = req.body;
 
     if (!artistName || artistName.trim() === "") {
       return res.status(400).json({ error: "Artist name is required" });
@@ -556,11 +561,12 @@ app.post("/artists", async (req, res) => {
 
     const result = await pool.query(
       `
-      INSERT INTO artists (artist_name, city, state)
-      VALUES ($1, $2, $3)
+      INSERT INTO artists (artist_name, role, city, state)
+      VALUES ($1, $2, $3, $4)
       RETURNING
         id,
         artist_name AS "artistName",
+        role,
         city,
         state,
         image_url AS "imageUrl",
@@ -570,6 +576,7 @@ app.post("/artists", async (req, res) => {
       `,
       [
         artistName.trim(),
+        role || "",
         city || "",
         state || ""
       ]
@@ -584,20 +591,22 @@ app.post("/artists", async (req, res) => {
 
 app.put("/artists/:id", async (req, res) => {
   try {
-    const { artistName, city, state } = req.body;
+    const { artistName, role, city, state } = req.body;
 
     const result = await pool.query(
       `
       UPDATE artists
       SET
         artist_name = COALESCE($1, artist_name),
-        city = COALESCE($2, city),
-        state = COALESCE($3, state),
+        role = COALESCE($2, role),
+        city = COALESCE($3, city),
+        state = COALESCE($4, state),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $4
+      WHERE id = $5
       RETURNING
         id,
         artist_name AS "artistName",
+        role,
         city,
         state,
         image_url AS "imageUrl",
@@ -607,6 +616,7 @@ app.put("/artists/:id", async (req, res) => {
       `,
       [
         artistName ?? null,
+        role ?? null,
         city ?? null,
         state ?? null,
         req.params.id
