@@ -32,34 +32,11 @@ const pool = new Pool({
 });
 
 async function setupDatabase() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS bands (
-      id SERIAL PRIMARY KEY,
-      band_name TEXT NOT NULL,
-      city TEXT DEFAULT '',
-      state TEXT DEFAULT '',
-      radio_show TEXT DEFAULT '',
-      image_url TEXT DEFAULT '',
-      cloudinary_public_id TEXT DEFAULT '',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  await pool.query(`
-    ALTER TABLE bands
-    ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT DEFAULT '';
-  `);
-
-  await pool.query(`
-    ALTER TABLE bands
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-  `);
-
-  await pool.query(`
+    await pool.query(`
     CREATE TABLE IF NOT EXISTS artists (
       id SERIAL PRIMARY KEY,
       artist_name TEXT NOT NULL,
+      role TEXT DEFAULT '',
       city TEXT DEFAULT '',
       state TEXT DEFAULT '',
       image_url TEXT DEFAULT '',
@@ -67,8 +44,9 @@ async function setupDatabase() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+  `);
 
-    await pool.query(`
+  await pool.query(`
     ALTER TABLE artists
     ADD COLUMN IF NOT EXISTS role TEXT DEFAULT '';
   `);
@@ -97,7 +75,6 @@ async function setupDatabase() {
     ALTER TABLE artists
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
   `);
-
   await pool.query(`
     CREATE TABLE IF NOT EXISTS albums (
       id SERIAL PRIMARY KEY,
