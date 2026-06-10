@@ -1019,24 +1019,9 @@ app.get("/bands/:id/albums", async (req, res) => {
   }
 });
 
-app.post("/bands/:id/albums", async (req, res) => {
+app.get("/bands/:id/albums", async (req, res) => {
   try {
-    const { albumTitle, bandName, releaseYear } = req.body;
-
-    if (!albumTitle || albumTitle.trim() === "") {
-      return res.status(400).json({ error: "Album title is required" });
-    }
-
-    const bandCheck = await pool.query(
-      "SELECT id, band_name FROM bands WHERE id = $1;",
-      [req.params.id]
-    );
-
-    if (bandCheck.rows.length === 0) {
-      return res.status(404).json({ error: "Band not found" });
-    }
-
-    const existingAlbum = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         albums.id,
@@ -1045,59 +1030,27 @@ app.post("/bands/:id/albums", async (req, res) => {
         albums.release_year AS "releaseYear",
         albums.image_url AS "imageUrl",
         albums.cloudinary_public_id AS "cloudinaryPublicId",
-        albums.created_at AS "createdAt",
-        albums.updated_at AS "updatedAt"
-      FROM albums
-      JOIN band_albums ON albums.id = band_albums.album_id
+        band_albums.created_at AS "linkedAt"
+      FROM band_albums
+      JOIN albums ON band_albums.album_id = albums.id
       JOIN bands ON band_albums.band_id = bands.id
       WHERE band_albums.band_id = $1
-        AND LOWER(albums.album_title) = LOWER($2)
-      LIMIT 1;
+      ORDER BY LOWER(albums.album_title) ASC;
       `,
-      [req.params.id, albumTitle.trim()]
+      [req.params.id]
     );
 
-    let album = existingAlbum.rows[0];
-
-    if (!album) {
-      const albumResult = await pool.query(
-        `
-        INSERT INTO albums (album_title, band_name, release_year)
-        VALUES ($1, $2, $3)
-        RETURNING
-          id,
-          album_title AS "albumTitle",
-          band_name AS "bandName",
-          release_year AS "releaseYear",
-          image_url AS "imageUrl",
-          cloudinary_public_id AS "cloudinaryPublicId",
-          created_at AS "createdAt",
-          updated_at AS "updatedAt";
-        `,
-        [albumTitle.trim(), bandName || bandCheck.rows[0].band_name || "", releaseYear || ""]
-      );
-
-      album = albumResult.rows[0];
-    }
-
-    await pool.query(
-      `
-      INSERT INTO band_albums (band_id, album_id)
-      VALUES ($1, $2)
-      ON CONFLICT (band_id, album_id)
-      DO NOTHING;
-      `,
-      [req.params.id, album.id]
-    );
-
-    res.status(201).json({
-      ...album,
-      bandName: bandCheck.rows[0].band_name || album.bandName || ""
-    });
+    res.json(result.rows);
   } catch (error) {
-    console.error("Error adding band album:", error);
-    res.status(500).json({ error: "Failed to add band album" });
+    console.error("Error getting band albums:", error);
+    res.status(500).json({ error: "Failed to get band albums" });
   }
+});
+
+/* PASTE THE NEW app.post("/bands/:id/albums") ROUTE RIGHT HERE */
+
+app.use((req, res) => {
+  res.status(404).json({ error: "Route not found" });
 });
 
 app.use((req, res) => {
