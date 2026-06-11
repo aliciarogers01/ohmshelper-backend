@@ -780,6 +780,35 @@ app.get("/albums", async (req, res) => {
   }
 });
 
+app.get("/artists/:id/bands", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        bands.id,
+        bands.band_name AS "bandName",
+        bands.city,
+        bands.state,
+        bands.radio_show AS "radioShow",
+        bands.image_url AS "imageUrl",
+        bands.cloudinary_public_id AS "cloudinaryPublicId",
+        band_artists.role,
+        band_artists.created_at AS "linkedAt"
+      FROM band_artists
+      JOIN bands ON band_artists.band_id = bands.id
+      WHERE band_artists.artist_id = $1
+      ORDER BY LOWER(bands.band_name) ASC;
+      `,
+      [req.params.id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error getting artist bands:", error);
+    res.status(500).json({ error: "Failed to get artist bands" });
+  }
+});
+
 app.post("/albums", async (req, res) => {
   try {
     const { albumTitle, bandName, releaseYear } = req.body;
