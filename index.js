@@ -1040,6 +1040,111 @@ app.delete("/albums/:id", async (req, res) => {
   }
 });
 
+app.get("/albums/:id/bands", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        bands.id,
+        bands.band_name AS "bandName",
+        bands.city,
+        bands.state,
+        bands.radio_show AS "radioShow",
+        bands.image_url AS "imageUrl",
+        bands.cloudinary_public_id AS "cloudinaryPublicId",
+        band_albums.created_at AS "linkedAt"
+      FROM band_albums
+      JOIN bands ON band_albums.band_id = bands.id
+      WHERE band_albums.album_id = $1
+      ORDER BY LOWER(bands.band_name) ASC;
+      `,
+      [req.params.id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error getting album bands:", error);
+    res.status(500).json({ error: "Failed to get album bands" });
+  }
+});
+
+app.post("/albums/:id/bands", async (req, res) => {
+  try {
+    const { bandName, city } = req.body;
+
+    if (!bandName || bandName.trim() === "") {
+      return res.status(400).json({ error: "Band name is required" });
+    }
+
+    const albumCheck = await pool.query(
+      "SELECT id, album_title FROM albums WHERE id = $1;",
+      [req.params.id]
+    );
+
+    if (albumCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Album not found" });
+    }
+
+    const existingBand = await pool.query(
+      `
+      SELECT
+        id,
+        band_name AS "bandName",
+        city,
+        state,
+        radio_show AS "radioShow",
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM bands
+      WHERE LOWER(TRIM(band_name)) = LOWER(TRIM($1))
+      LIMIT 1;
+      `,
+      [bandName.trim()]
+    );
+
+    let band = existingBand.rows[0];
+
+    if (!band) {
+      const bandResult = await pool.query(
+        `
+        INSERT INTO bands (band_name, city, state, radio_show, image_url)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING
+          id,
+          band_name AS "bandName",
+          city,
+          state,
+          radio_show AS "radioShow",
+          image_url AS "imageUrl",
+          cloudinary_public_id AS "cloudinaryPublicId",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt";
+        `,
+        [bandName.trim(), city || "", "", "", ""]
+      );
+
+      band = bandResult.rows[0];
+    }
+
+    await pool.query(
+      `
+      INSERT INTO band_albums (band_id, album_id)
+      VALUES ($1, $2)
+      ON CONFLICT (band_id, album_id)
+      DO NOTHING;
+      `,
+      [band.id, req.params.id]
+    );
+
+    res.status(201).json(band);
+  } catch (error) {
+    console.error("Error linking band to album:", error);
+    res.status(500).json({ error: "Failed to link band to album" });
+  }
+});
+
 app.get("/bands/:id/albums", async (req, res) => {
   try {
     const result = await pool.query(
