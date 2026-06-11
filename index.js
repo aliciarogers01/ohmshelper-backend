@@ -665,6 +665,86 @@ app.get("/bands/:id/artists", async (req, res) => {
   }
 });
 
+app.post("/artists/:id/bands", async (req, res) => {
+  try {
+    const { bandName, city, role } = req.body;
+
+    if (!bandName || bandName.trim() === "") {
+      return res.status(400).json({ error: "Band name is required" });
+    }
+
+    const artistCheck = await pool.query(
+      "SELECT id, artist_name FROM artists WHERE id = $1;",
+      [req.params.id]
+    );
+
+    if (artistCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Artist not found" });
+    }
+
+    const existingBand = await pool.query(
+      `
+      SELECT
+        id,
+        band_name AS "bandName",
+        city,
+        state,
+        radio_show AS "radioShow",
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM bands
+      WHERE LOWER(TRIM(band_name)) = LOWER(TRIM($1))
+      LIMIT 1;
+      `,
+      [bandName.trim()]
+    );
+
+    let band = existingBand.rows[0];
+
+    if (!band) {
+      const bandResult = await pool.query(
+        `
+        INSERT INTO bands (band_name, city, state, radio_show, image_url)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING
+          id,
+          band_name AS "bandName",
+          city,
+          state,
+          radio_show AS "radioShow",
+          image_url AS "imageUrl",
+          cloudinary_public_id AS "cloudinaryPublicId",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt";
+        `,
+        [bandName.trim(), city || "", "", "", ""]
+      );
+
+      band = bandResult.rows[0];
+    }
+
+    await pool.query(
+      `
+      INSERT INTO band_artists (band_id, artist_id, role)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (band_id, artist_id)
+      DO UPDATE SET role = EXCLUDED.role;
+      `,
+      [band.id, req.params.id, role || ""]
+    );
+
+    res.status(201).json({
+      ...band,
+      role: role || ""
+    });
+  } catch (error) {
+    console.error("Error linking band to artist:", error);
+    res.status(500).json({ error: "Failed to link band to artist" });
+  }
+});
+
 app.post("/bands/:id/artists", async (req, res) => {
   try {
     const { artistName, role, city, state } = req.body;
