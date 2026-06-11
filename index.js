@@ -174,6 +174,33 @@ async function setupDatabase() {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS songs (
+      id SERIAL PRIMARY KEY,
+      song_title TEXT NOT NULL,
+      band_name TEXT DEFAULT '',
+      album_title TEXT DEFAULT '',
+      album_image_url TEXT DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS band_name TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS album_title TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS album_image_url TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS album_songs (
+      id SERIAL PRIMARY KEY,
+      album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+      song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (album_id, song_id)
+    );
+  `);
+  
   console.log("Database is ready.");
 }
 
@@ -2089,6 +2116,256 @@ app.post("/flyers/:id/venues", async (req, res) => {
   } catch (error) {
     console.error("Error linking venue to flyer:", error);
     res.status(500).json({ error: "Failed to link venue to flyer" });
+  }
+});
+
+// ===== SONGS =====
+
+app.get("/songs", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        songs.id,
+        songs.song_title AS "songTitle",
+        songs.band_name AS "bandName",
+        songs.album_title AS "albumTitle",
+        songs.album_image_url AS "albumImageUrl",
+        songs.created_at AS "createdAt",
+        songs.updated_at AS "updatedAt"
+      FROM songs
+      ORDER BY LOWER(songs.song_title) ASC;
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error getting songs:", error);
+    res.status(500).json({ error: "Failed to get songs" });
+  }
+});
+
+app.post("/songs", async (req, res) => {
+  try {
+    const { songTitle, bandName, albumTitle, albumImageUrl } = req.body;
+
+    if (!songTitle || songTitle.trim() === "") {
+      return res.status(400).json({ error: "Song title is required" });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO songs (song_title, band_name, album_title, album_image_url)
+      VALUES ($1, $2, $3, $4)
+      RETURNING
+        id,
+        song_title AS "songTitle",
+        band_name AS "bandName",
+        album_title AS "albumTitle",
+        album_image_url AS "albumImageUrl",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [
+        songTitle.trim(),
+        bandName || "",
+        albumTitle || "",
+        albumImageUrl || ""
+      ]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Error adding song:", error);
+    res.status(500).json({ error: "Failed to add song" });
+  }
+});
+
+app.put("/songs/:id", async (req, res) => {
+  try {
+    const { songTitle, bandName, albumTitle, albumImageUrl } = req.body;
+
+    const result = await pool.query(
+      `
+      UPDATE songs
+      SET
+        song_title = COALESCE($1, song_title),
+        band_name = COALESCE($2, band_name),
+        album_title = COALESCE($3, album_title),
+        album_image_url = COALESCE($4, album_image_url),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $5
+      RETURNING
+        id,
+        song_title AS "songTitle",
+        band_name AS "bandName",
+        album_title AS "albumTitle",
+        album_image_url AS "albumImageUrl",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [
+        songTitle ?? null,
+        bandName ?? null,
+        albumTitle ?? null,
+        albumImageUrl ?? null,
+        req.params.id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Song not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating song:", error);
+    res.status(500).json({ error: "Failed to update song" });
+  }
+});
+
+app.delete("/songs/:id", async (req, res) => {
+  try {
+    const existing = await pool.query(
+      "SELECT id FROM songs WHERE id = $1;",
+      [req.params.id]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: "Song not found" });
+    }
+
+    await pool.query("DELETE FROM album_songs WHERE song_id = $1;", [req.params.id]);
+    await pool.query("DELETE FROM songs WHERE id = $1;", [req.params.id]);
+
+    res.json({
+      success: true,
+      deletedId: Number(req.params.id)
+    });
+  } catch (error) {
+    console.error("Error deleting song:", error);
+    res.status(500).json({ error: "Failed to delete song" });
+  }
+});
+
+// ===== ALBUM / SONG LINKS =====
+
+app.get("/albums/:id/songs", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        songs.id,
+        songs.song_title AS "songTitle",
+        COALESCE(songs.band_name, albums.band_name, '') AS "bandName",
+        COALESCE(songs.album_title, albums.album_title, '') AS "albumTitle",
+        COALESCE(songs.album_image_url, albums.image_url, '') AS "albumImageUrl",
+        album_songs.created_at AS "linkedAt"
+      FROM album_songs
+      JOIN songs ON album_songs.song_id = songs.id
+      JOIN albums ON album_songs.album_id = albums.id
+      WHERE album_songs.album_id = $1
+      ORDER BY LOWER(songs.song_title) ASC;
+      `,
+      [req.params.id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error getting album songs:", error);
+    res.status(500).json({ error: "Failed to get album songs" });
+  }
+});
+
+app.post("/albums/:id/songs", async (req, res) => {
+  try {
+    const { songTitle } = req.body;
+
+    if (!songTitle || songTitle.trim() === "") {
+      return res.status(400).json({ error: "Song title is required" });
+    }
+
+    const albumCheck = await pool.query(
+      `
+      SELECT
+        id,
+        album_title AS "albumTitle",
+        band_name AS "bandName",
+        image_url AS "albumImageUrl"
+      FROM albums
+      WHERE id = $1;
+      `,
+      [req.params.id]
+    );
+
+    if (albumCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Album not found" });
+    }
+
+    const album = albumCheck.rows[0];
+
+    const existingSong = await pool.query(
+      `
+      SELECT
+        id,
+        song_title AS "songTitle",
+        band_name AS "bandName",
+        album_title AS "albumTitle",
+        album_image_url AS "albumImageUrl",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM songs
+      WHERE LOWER(TRIM(song_title)) = LOWER(TRIM($1))
+        AND LOWER(TRIM(COALESCE(album_title, ''))) = LOWER(TRIM($2))
+        AND LOWER(TRIM(COALESCE(band_name, ''))) = LOWER(TRIM($3))
+      LIMIT 1;
+      `,
+      [
+        songTitle.trim(),
+        album.albumTitle || "",
+        album.bandName || ""
+      ]
+    );
+
+    let song = existingSong.rows[0];
+
+    if (!song) {
+      const songResult = await pool.query(
+        `
+        INSERT INTO songs (song_title, band_name, album_title, album_image_url)
+        VALUES ($1, $2, $3, $4)
+        RETURNING
+          id,
+          song_title AS "songTitle",
+          band_name AS "bandName",
+          album_title AS "albumTitle",
+          album_image_url AS "albumImageUrl",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt";
+        `,
+        [
+          songTitle.trim(),
+          album.bandName || "",
+          album.albumTitle || "",
+          album.albumImageUrl || ""
+        ]
+      );
+
+      song = songResult.rows[0];
+    }
+
+    await pool.query(
+      `
+      INSERT INTO album_songs (album_id, song_id)
+      VALUES ($1, $2)
+      ON CONFLICT (album_id, song_id)
+      DO NOTHING;
+      `,
+      [req.params.id, song.id]
+    );
+
+    res.status(201).json(song);
+  } catch (error) {
+    console.error("Error linking song to album:", error);
+    res.status(500).json({ error: "Failed to link song to album" });
   }
 });
 
