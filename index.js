@@ -2684,6 +2684,81 @@ app.delete("/radio-shows/:id", async (req, res) => {
   }
 });
 
+// ===== RADIO LIBRARY ALBUMS =====
+
+app.get("/radio-library/albums", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        id,
+        album_title AS "albumTitle",
+        band_name AS "bandName",
+        release_year AS "releaseYear",
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        on_station AS "onStation",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM albums
+      WHERE on_station = TRUE
+      ORDER BY LOWER(band_name) ASC, LOWER(album_title) ASC;
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error getting radio library albums:", error);
+    res.status(500).json({
+      error: "Failed to get radio library albums"
+    });
+  }
+});
+
+app.put("/albums/:id/station-status", async (req, res) => {
+  try {
+    const { onStation } = req.body;
+
+    if (typeof onStation !== "boolean") {
+      return res.status(400).json({
+        error: "onStation must be true or false"
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE albums
+      SET
+        on_station = $1,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING
+        id,
+        album_title AS "albumTitle",
+        band_name AS "bandName",
+        release_year AS "releaseYear",
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        on_station AS "onStation",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [onStation, req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: "Album not found"
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating album station status:", error);
+    res.status(500).json({
+      error: "Failed to update album station status"
+    });
+  }
+});
+
 app.use((req, res) => {
   res.status(404).json({ error: "Route not found" });
 });
