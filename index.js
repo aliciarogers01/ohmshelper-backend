@@ -200,6 +200,33 @@ async function setupDatabase() {
       UNIQUE (album_id, song_id)
     );
   `);
+
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS radio_shows (
+      id SERIAL PRIMARY KEY,
+      show_name TEXT NOT NULL,
+      host TEXT DEFAULT '',
+      day TEXT DEFAULT '',
+      start_time TEXT DEFAULT '',
+      end_time TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      active BOOLEAN DEFAULT FALSE,
+      image_url TEXT DEFAULT '',
+      cloudinary_public_id TEXT DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await pool.query(`ALTER TABLE radio_shows ADD COLUMN IF NOT EXISTS host TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE radio_shows ADD COLUMN IF NOT EXISTS day TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE radio_shows ADD COLUMN IF NOT EXISTS start_time TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE radio_shows ADD COLUMN IF NOT EXISTS end_time TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE radio_shows ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE radio_shows ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE radio_shows ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE radio_shows ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT DEFAULT '';`);
+  await pool.query(`ALTER TABLE radio_shows ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
   
   console.log("Database is ready.");
 }
@@ -2366,6 +2393,294 @@ app.post("/albums/:id/songs", async (req, res) => {
   } catch (error) {
     console.error("Error linking song to album:", error);
     res.status(500).json({ error: "Failed to link song to album" });
+  }
+});
+
+// ===== RADIO SHOWS =====
+
+app.get("/radio-shows", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        id,
+        show_name AS "showName",
+        host,
+        day,
+        start_time AS "startTime",
+        end_time AS "endTime",
+        description,
+        active,
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM radio_shows
+      ORDER BY LOWER(show_name) ASC;
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error getting radio shows:", error);
+    res.status(500).json({ error: "Failed to get radio shows" });
+  }
+});
+
+app.get("/radio-shows/:id", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        show_name AS "showName",
+        host,
+        day,
+        start_time AS "startTime",
+        end_time AS "endTime",
+        description,
+        active,
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM radio_shows
+      WHERE id = $1;
+      `,
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Radio show not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error getting radio show:", error);
+    res.status(500).json({ error: "Failed to get radio show" });
+  }
+});
+
+app.post("/radio-shows", async (req, res) => {
+  try {
+    const {
+      showName,
+      host,
+      day,
+      startTime,
+      endTime,
+      description,
+      active
+    } = req.body;
+
+    if (!showName || showName.trim() === "") {
+      return res.status(400).json({ error: "Show name is required" });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO radio_shows (
+        show_name,
+        host,
+        day,
+        start_time,
+        end_time,
+        description,
+        active
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING
+        id,
+        show_name AS "showName",
+        host,
+        day,
+        start_time AS "startTime",
+        end_time AS "endTime",
+        description,
+        active,
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [
+        showName.trim(),
+        host || "",
+        day || "",
+        startTime || "",
+        endTime || "",
+        description || "",
+        Boolean(active)
+      ]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Error adding radio show:", error);
+    res.status(500).json({ error: "Failed to add radio show" });
+  }
+});
+
+app.put("/radio-shows/:id", async (req, res) => {
+  try {
+    const {
+      showName,
+      host,
+      day,
+      startTime,
+      endTime,
+      description,
+      active
+    } = req.body;
+
+    const result = await pool.query(
+      `
+      UPDATE radio_shows
+      SET
+        show_name = COALESCE($1, show_name),
+        host = COALESCE($2, host),
+        day = COALESCE($3, day),
+        start_time = COALESCE($4, start_time),
+        end_time = COALESCE($5, end_time),
+        description = COALESCE($6, description),
+        active = COALESCE($7, active),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $8
+      RETURNING
+        id,
+        show_name AS "showName",
+        host,
+        day,
+        start_time AS "startTime",
+        end_time AS "endTime",
+        description,
+        active,
+        image_url AS "imageUrl",
+        cloudinary_public_id AS "cloudinaryPublicId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt";
+      `,
+      [
+        showName ?? null,
+        host ?? null,
+        day ?? null,
+        startTime ?? null,
+        endTime ?? null,
+        description ?? null,
+        typeof active === "boolean" ? active : null,
+        req.params.id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Radio show not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating radio show:", error);
+    res.status(500).json({ error: "Failed to update radio show" });
+  }
+});
+
+app.post(
+  "/radio-shows/:id/image",
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No image file uploaded" });
+      }
+
+      const showCheck = await pool.query(
+        "SELECT id FROM radio_shows WHERE id = $1;",
+        [req.params.id]
+      );
+
+      if (showCheck.rows.length === 0) {
+        return res.status(404).json({ error: "Radio show not found" });
+      }
+
+      const cloudinaryResult = await uploadBufferToCloudinary(
+        req.file.buffer,
+        "ohms-helper/radio-shows"
+      );
+
+      const result = await pool.query(
+        `
+        UPDATE radio_shows
+        SET
+          image_url = $1,
+          cloudinary_public_id = $2,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+        RETURNING
+          id,
+          show_name AS "showName",
+          host,
+          day,
+          start_time AS "startTime",
+          end_time AS "endTime",
+          description,
+          active,
+          image_url AS "imageUrl",
+          cloudinary_public_id AS "cloudinaryPublicId",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt";
+        `,
+        [
+          cloudinaryResult.secure_url,
+          cloudinaryResult.public_id,
+          req.params.id
+        ]
+      );
+
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error("Error uploading radio show image:", error);
+      res.status(500).json({ error: "Failed to upload radio show image" });
+    }
+  }
+);
+
+app.delete("/radio-shows/:id", async (req, res) => {
+  try {
+    const existing = await pool.query(
+      `
+      SELECT cloudinary_public_id
+      FROM radio_shows
+      WHERE id = $1;
+      `,
+      [req.params.id]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: "Radio show not found" });
+    }
+
+    const publicId = existing.rows[0].cloudinary_public_id;
+
+    if (publicId) {
+      try {
+        await cloudinary.uploader.destroy(publicId);
+      } catch (cloudinaryError) {
+        console.warn(
+          "Could not delete Cloudinary radio show image:",
+          cloudinaryError
+        );
+      }
+    }
+
+    await pool.query(
+      "DELETE FROM radio_shows WHERE id = $1;",
+      [req.params.id]
+    );
+
+    res.json({
+      success: true,
+      deletedId: Number(req.params.id)
+    });
+  } catch (error) {
+    console.error("Error deleting radio show:", error);
+    res.status(500).json({ error: "Failed to delete radio show" });
   }
 });
 
