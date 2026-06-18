@@ -94,6 +94,11 @@ async function setupDatabase() {
   await pool.query(`ALTER TABLE albums ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
 
   await pool.query(`
+  ALTER TABLE albums
+  ADD COLUMN IF NOT EXISTS on_station BOOLEAN DEFAULT FALSE;
+`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS band_artists (
       id SERIAL PRIMARY KEY,
       band_id INTEGER NOT NULL REFERENCES bands(id) ON DELETE CASCADE,
